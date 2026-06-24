@@ -5,17 +5,19 @@ import {
 } from "../src/lib/browser-models";
 import { cropCanvasFromRect, squareFaceRectFromLandmarks } from "../src/lib/canvas";
 import {
+  MATCH_CONFIDENCE_THRESHOLD,
   expressionNamesKo,
   formatPercent,
   type EmotionScores,
   type ExpressionLabel,
 } from "../src/lib/emotions";
 
-type CelebrityExpressionCase = {
+type KoreanIdolExpressionCase = {
   id: string;
   name: string;
   role: string;
   expectedExpression: ExpressionLabel;
+  visualCue: string;
   imageUrl: string;
   sourceUrl: string;
   license: string;
@@ -28,12 +30,13 @@ type RankedScore = {
   percent: string;
 };
 
-type CelebrityExpressionResult = {
+type KoreanIdolExpressionResult = {
   id: string;
   name: string;
   role: string;
   expectedExpression: ExpressionLabel;
   expectedExpressionKo: string;
+  visualCue: string;
   sourceUrl: string;
   license: string;
   imageSize: {
@@ -50,22 +53,23 @@ type CelebrityExpressionResult = {
   topLabelKo: string;
   confidence: number;
   confidencePercent: string;
+  topLabelMatched: boolean;
   matched: boolean;
   ranked: RankedScore[];
 };
 
 declare global {
   interface Window {
-    runCelebrityExpressionReport: (
-      cases: CelebrityExpressionCase[],
-    ) => Promise<CelebrityExpressionResult[]>;
+    runKoreanIdolExpressionReport: (
+      cases: KoreanIdolExpressionCase[],
+    ) => Promise<KoreanIdolExpressionResult[]>;
   }
 }
 
-window.runCelebrityExpressionReport = async (cases) => {
+window.runKoreanIdolExpressionReport = async (cases) => {
   const faceLandmarker = await createFaceLandmarker();
   const emotionRuntime = await createEmotionRuntime();
-  const results: CelebrityExpressionResult[] = [];
+  const results: KoreanIdolExpressionResult[] = [];
 
   try {
     for (const testCase of cases) {
@@ -91,12 +95,15 @@ window.runCelebrityExpressionReport = async (cases) => {
         throw new Error(`No emotion scores returned for ${testCase.name}`);
       }
 
+      const topLabelMatched = top.label === testCase.expectedExpression;
+
       results.push({
         id: testCase.id,
         name: testCase.name,
         role: testCase.role,
         expectedExpression: testCase.expectedExpression,
         expectedExpressionKo: expressionNamesKo[testCase.expectedExpression],
+        visualCue: testCase.visualCue,
         sourceUrl: testCase.sourceUrl,
         license: testCase.license,
         imageSize: {
@@ -113,7 +120,8 @@ window.runCelebrityExpressionReport = async (cases) => {
         topLabelKo: top.labelKo,
         confidence: top.score,
         confidencePercent: top.percent,
-        matched: top.label === testCase.expectedExpression,
+        topLabelMatched,
+        matched: topLabelMatched && top.score >= MATCH_CONFIDENCE_THRESHOLD,
         ranked,
       });
     }

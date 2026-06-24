@@ -7,60 +7,65 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
-const outputDir = path.join(rootDir, "test-results", "celebrity-expression");
+const outputDir = path.join(rootDir, "test-results", "korean-idol-expression");
 const harnessFile = path.join(outputDir, "harness.js");
 const publicDir = path.join(rootDir, "public");
 
 const expressionCases = [
   {
-    id: "neutral-buster-keaton",
-    name: "Buster Keaton",
-    role: "actor",
+    id: "neutral-suga-bts",
+    name: "Suga",
+    role: "BTS",
     expectedExpression: "Neutral",
+    visualCue: "Fanmeeting portrait with a relaxed mouth and focused gaze.",
     directUrl:
-      "https://upload.wikimedia.org/wikipedia/commons/5/5a/Buster_Keaton_in_Photoplay%2C_December_1924.jpg",
-    sourceUrl:
-      "https://commons.wikimedia.org/wiki/File:Buster_Keaton_in_Photoplay,_December_1924.jpg",
-    license: "Public domain",
+      "https://upload.wikimedia.org/wikipedia/commons/3/3b/Suga_at_a_fanmeeting%2C_22_September_2013.jpg",
+    sourceUrl: "https://commons.wikimedia.org/wiki/File:Suga_at_a_fanmeeting,_22_September_2013.jpg",
+    license: "CC BY 4.0",
   },
   {
-    id: "happy-marilyn-monroe",
-    name: "Marilyn Monroe",
-    role: "actor",
+    id: "happy-kim-jisoo-blackpink",
+    name: "Kim Jisoo",
+    role: "BLACKPINK",
     expectedExpression: "Happiness",
-    directUrl: "https://upload.wikimedia.org/wikipedia/commons/1/15/Marilyn_Monroe_1952.jpg",
-    sourceUrl: "https://commons.wikimedia.org/wiki/File:Marilyn_Monroe_1952.jpg",
-    license: "Public domain",
+    visualCue: "Bright airport portrait with a visible smile.",
+    directUrl: "https://upload.wikimedia.org/wikipedia/commons/6/66/Kim_Jisoo_in_July_2023_05_%28cropped%29.jpg",
+    sourceUrl: "https://commons.wikimedia.org/wiki/File:Kim_Jisoo_in_July_2023_05_(cropped).jpg",
+    license: "CC BY 4.0",
   },
   {
-    id: "sad-hilda-dokubo",
-    name: "Hilda Dokubo",
-    role: "actor",
+    id: "sad-jennie-blackpink",
+    name: "Jennie Kim",
+    role: "BLACKPINK",
     expectedExpression: "Sadness",
-    directUrl: "https://upload.wikimedia.org/wikipedia/commons/0/05/Hilda_Dokubo_crying_1.jpg",
-    sourceUrl: "https://commons.wikimedia.org/wiki/File:Hilda_Dokubo_crying_1.jpg",
-    license: "CC BY-SA 3.0 or GFDL",
-  },
-  {
-    id: "anger-william-forrest",
-    name: "William Forrest",
-    role: "actor",
-    expectedExpression: "Anger",
+    visualCue: "STAY stage still with a downcast, solemn look.",
     directUrl:
-      "https://upload.wikimedia.org/wikipedia/commons/2/2e/William_Forrest_in_Rage_at_Dawn.jpg",
-    sourceUrl: "https://commons.wikimedia.org/wiki/File:William_Forrest_in_Rage_at_Dawn.jpg",
-    license: "Public domain",
-  },
-  {
-    id: "surprise-audrey-hepburn",
-    name: "Audrey Hepburn",
-    role: "actor",
-    expectedExpression: "Surprise",
-    directUrl:
-      "https://upload.wikimedia.org/wikipedia/commons/1/12/Harry_Stradling-Audrey_Hepburn_in_My_Fair_Lady_%28cropped%29.jpg",
+      "https://upload.wikimedia.org/wikipedia/commons/6/63/171028_%ED%8F%89%EC%B0%BD_%EB%AE%A4%EC%A7%81%ED%8E%98%EC%8A%A4%ED%83%80_-_%EC%A0%9C%EB%8B%88%28%EB%B8%94%EB%9E%99%ED%95%91%ED%81%AC%29_%27STAY%27_4K_60P_%EC%A7%81%EC%BA%A0_by_DaftTaengk_%281%29.png",
     sourceUrl:
-      "https://commons.wikimedia.org/wiki/File:Harry_Stradling-Audrey_Hepburn_in_My_Fair_Lady_(cropped).jpg",
-    license: "Public domain",
+      "https://commons.wikimedia.org/wiki/File%3A171028_%ED%8F%89%EC%B0%BD_%EB%AE%A4%EC%A7%81%ED%8E%98%EC%8A%A4%ED%83%80_-_%EC%A0%9C%EB%8B%88%28%EB%B8%94%EB%9E%99%ED%95%91%ED%81%AC%29_%27STAY%27_4K_60P_%EC%A7%81%EC%BA%A0_by_DaftTaengk_%281%29.png",
+    license: "CC BY 3.0",
+  },
+  {
+    id: "anger-byun-baekhyun-exo",
+    name: "Byun Baekhyun",
+    role: "EXO",
+    expectedExpression: "Anger",
+    visualCue: "Performance portrait selected for a firm, intense expression.",
+    directUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/c/cd/Byun_Baek-hyun_at_Korea_Music_Festival_on_October%2C_1_2017_%281%29.png",
+    sourceUrl:
+      "https://commons.wikimedia.org/wiki/File:Byun_Baek-hyun_at_Korea_Music_Festival_on_October,_1_2017_(1).png",
+    license: "CC BY 3.0",
+  },
+  {
+    id: "surprise-jang-wonyoung-ive",
+    name: "Jang Wonyoung",
+    role: "IVE",
+    expectedExpression: "Surprise",
+    visualCue: "Wide-eyed Produce48 still selected as the surprise target.",
+    directUrl: "https://upload.wikimedia.org/wikipedia/commons/2/21/Jang_Wonyoung_at_Produce48_9.png",
+    sourceUrl: "https://commons.wikimedia.org/wiki/File:Jang_Wonyoung_at_Produce48_9.png",
+    license: "CC BY-SA 3.0",
   },
 ];
 
@@ -70,7 +75,7 @@ await mkdir(outputDir, { recursive: true });
 await build({
   absWorkingDir: rootDir,
   bundle: true,
-  entryPoints: [path.join(rootDir, "scripts", "celebrity-expression-harness.ts")],
+  entryPoints: [path.join(rootDir, "scripts", "korean-idol-expression-harness.ts")],
   format: "esm",
   outfile: harnessFile,
   platform: "browser",
@@ -89,7 +94,7 @@ const server = createServer(async (request, response) => {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(`<!doctype html>
 <html lang="ko">
-  <head><meta charset="utf-8"><title>Celebrity Expression Report</title></head>
+  <head><meta charset="utf-8"><title>Korean Idol Expression Report</title></head>
   <body><script type="module" src="/harness.js"></script></body>
 </html>`);
       return;
@@ -105,8 +110,8 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    if (pathname.startsWith("/celebrity/")) {
-      const id = pathname.replace("/celebrity/", "");
+    if (pathname.startsWith("/idol/")) {
+      const id = pathname.replace("/idol/", "");
       const testCase = expressionCases.find((candidate) => candidate.id === id);
 
       if (!testCase) {
@@ -151,19 +156,20 @@ page.on("pageerror", (error) => {
 try {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(
-    () => typeof window.runCelebrityExpressionReport === "function",
+    () => typeof window.runKoreanIdolExpressionReport === "function",
     undefined,
     { timeout: 120_000 },
   );
 
   const results = await page.evaluate(
-    (cases) => window.runCelebrityExpressionReport(cases),
+    (cases) => window.runKoreanIdolExpressionReport(cases),
     expressionCases.map((testCase) => ({
       id: testCase.id,
       name: testCase.name,
       role: testCase.role,
       expectedExpression: testCase.expectedExpression,
-      imageUrl: `/celebrity/${testCase.id}`,
+      visualCue: testCase.visualCue,
+      imageUrl: `/idol/${testCase.id}`,
       sourceUrl: testCase.sourceUrl,
       license: testCase.license,
     })),
@@ -173,6 +179,7 @@ try {
     generatedAt: new Date().toISOString(),
     model: "EmotiEffLib enet_b0_8_best_vgaf.onnx",
     detector: "MediaPipe Face Landmarker",
+    matchRule: "Top label must equal the expected expression and confidence must be at least 45%.",
     note: "Images are fetched only by this test script and are not bundled in the web app.",
     consoleErrors,
     pageErrors,
@@ -180,12 +187,12 @@ try {
   };
 
   await writeFile(
-    path.join(outputDir, "celebrity-expression-report.json"),
+    path.join(outputDir, "korean-idol-expression-report.json"),
     `${JSON.stringify(payload, null, 2)}\n`,
     "utf8",
   );
   await writeFile(
-    path.join(outputDir, "celebrity-expression-report.md"),
+    path.join(outputDir, "korean-idol-expression-report.md"),
     toMarkdown(payload),
     "utf8",
   );
@@ -241,7 +248,7 @@ async function fetchWithRetry(url, attempts = 6) {
       headers: {
         accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
         referer: "https://commons.wikimedia.org/",
-        "user-agent": "face-detect-celebrity-expression-test/0.1 (local test)",
+        "user-agent": "face-detect-korean-idol-expression-test/0.1 (local test)",
       },
     });
 
@@ -281,7 +288,7 @@ function mimeFor(filePath) {
 
 function toConsoleSummary(payload) {
   const lines = [
-    "Celebrity expression test report",
+    "Korean idol expression test report",
     `Generated: ${payload.generatedAt}`,
     "",
     ...payload.results.map((result) => {
@@ -289,14 +296,18 @@ function toConsoleSummary(payload) {
         .slice(0, 3)
         .map((score) => `${score.labelKo} ${score.percent}`)
         .join(", ");
-      const matched = result.matched ? "MATCH" : "MISS";
+      const matched = result.matched
+        ? "MATCH"
+        : result.topLabelMatched
+          ? "TOP MATCH, LOW CONF"
+          : "MISS";
       return `- ${result.expectedExpressionKo} / ${result.name}: ${result.topLabelKo} ${result.confidencePercent} (${matched}) | ${topThree}`;
     }),
     "",
     `Report: ${path.join(
       "test-results",
-      "celebrity-expression",
-      "celebrity-expression-report.md",
+      "korean-idol-expression",
+      "korean-idol-expression-report.md",
     )}`,
   ];
 
@@ -317,19 +328,20 @@ function toMarkdown(payload) {
         .slice(0, 3)
         .map((score) => `${score.labelKo} ${score.percent}`)
         .join("<br>");
-      return `| ${result.expectedExpressionKo} | ${result.name} | ${result.topLabelKo} | ${result.confidencePercent} | ${result.matched ? "yes" : "no"} | ${topThree} | [source](${result.sourceUrl}) | ${result.license} |`;
+      return `| ${result.expectedExpressionKo} | ${result.name} | ${result.role} | ${result.topLabelKo} | ${result.confidencePercent} | ${result.topLabelMatched ? "yes" : "no"} | ${result.matched ? "yes" : "no"} | ${result.visualCue} | ${topThree} | [source](${result.sourceUrl}) | ${result.license} |`;
     })
     .join("\n");
 
-  return `# Celebrity Expression Test Report
+  return `# Korean Idol Expression Test Report
 
 - Generated: ${payload.generatedAt}
 - Model: ${payload.model}
 - Detector: ${payload.detector}
+- Match rule: ${payload.matchRule}
 - Scope: test script only; images are not bundled in the web app.
 
-| Expected | Celebrity | Predicted | Confidence | Match | Top 3 scores | Source | License |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+| Expected | Idol | Group | Predicted | Confidence | Top match | App match | Visual cue | Top 3 scores | Source | License |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 ${rows}
 
 Console errors: ${payload.consoleErrors.length}

@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:expressions": "node scripts/celebrity-expression-report.mjs"
+    "test:expressions": "npm run test:korean-idols",
+    "test:korean-idols": "node scripts/korean-idol-expression-report.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
