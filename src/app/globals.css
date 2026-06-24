@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f2ec;
+  --foreground: #1b1b1f;
+  --surface: #fffdf8;
+  --surface-muted: #ede7dd;
+  --border: #d8d0c3;
+  --accent: #1f8a70;
+  --accent-strong: #14685a;
+  --danger: #b14f3b;
+  --warning: #bf7c1d;
+  --ink-soft: #5d5c64;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #191816;
+    --foreground: #f5f0e8;
+    --surface: #24221f;
+    --surface-muted: #312e29;
+    --border: #454036;
+    --accent: #39b79b;
+    --accent-strong: #7ed8c6;
+    --danger: #e27b64;
+    --warning: #e3a43e;
+    --ink-soft: #c7bfb1;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+button,
+a {
+  letter-spacing: 0;
+}
+
+canvas,
+img,
+video {
+  max-width: 100%;
 }
