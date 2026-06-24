@@ -14,7 +14,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createEmotionRuntime, createFaceLandmarker, type EmotionRuntime } from "@/lib/browser-models";
+import {
+  createEmotionRuntime,
+  createFaceLandmarker,
+  withSuppressedMediaPipeInfoLogs,
+  type EmotionRuntime,
+} from "@/lib/browser-models";
 import {
   averageEmotionScores,
   expressionNamesKo,
@@ -30,6 +35,7 @@ import {
   squareFaceRectFromLandmarks,
   type PixelRect,
 } from "@/lib/canvas";
+import { sampleFaces, type SampleFace } from "@/lib/sample-faces";
 import { templates, type TemplateConfig } from "@/lib/templates";
 
 type ModelState = "loading" | "ready" | "error";
@@ -52,6 +58,7 @@ export function ExpressionStudio() {
   const [prediction, setPrediction] = useState<EmotionPrediction | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [activeSampleId, setActiveSampleId] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -63,6 +70,12 @@ export function ExpressionStudio() {
     () => templates.find((template) => template.id === selectedTemplateId) ?? templates[0],
     [selectedTemplateId],
   );
+
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setCameraReady(false);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -138,12 +151,6 @@ export function ExpressionStudio() {
     }
   }
 
-  function stopCamera() {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setCameraReady(false);
-  }
-
   async function captureAndAnalyze() {
     const faceLandmarker = faceLandmarkerRef.current;
     const emotionRuntime = emotionRuntimeRef.current;
@@ -169,7 +176,7 @@ export function ExpressionStudio() {
     for (let index = 0; index < SAMPLE_COUNT; index += 1) {
       setStatusText(`분석 중 ${index + 1}/${SAMPLE_COUNT}`);
       const frameCanvas = captureVideoFrame(video);
-      const detection = faceLandmarker.detect(frameCanvas);
+      const detection = detectFace(faceLandmarker, frameCanvas);
       const landmarks = detection.faceLandmarks[0];
 
       if (landmarks?.length) {
@@ -206,6 +213,55 @@ export function ExpressionStudio() {
     setStatusText(nextPrediction.matched ? "표정 일치" : "표정 불일치");
   }
 
+  async function applySampleFace(sample: SampleFace) {
+    const faceLandmarker = faceLandmarkerRef.current;
+    const emotionRuntime = emotionRuntimeRef.current;
+
+    if (!faceLandmarker || !emotionRuntime) {
+      setLastError("분석 모델이 아직 준비되지 않았습니다.");
+      return;
+    }
+
+    try {
+      setActiveSampleId(sample.id);
+      setPrediction(null);
+      setResultUrl(null);
+      setLastError(null);
+      setCaptureStatus("capturing");
+      setStatusText("샘플 분석 중");
+
+      const frameCanvas = await loadImageCanvas(sample.imageSrc);
+      const detection = detectFace(faceLandmarker, frameCanvas);
+      const landmarks = detection.faceLandmarks[0];
+
+      if (!landmarks?.length) {
+        throw new Error("샘플 사진에서 얼굴 영역을 찾지 못했습니다.");
+      }
+
+      const faceRect = squareFaceRectFromLandmarks(
+        landmarks,
+        frameCanvas.width,
+        frameCanvas.height,
+      );
+      const faceCanvas = cropCanvasFromRect(frameCanvas, faceRect);
+      const scores = await emotionRuntime.predict(faceCanvas);
+      const nextPrediction = predictionFromScores(scores, selectedTemplate.targetEmotion);
+      const nextResultUrl = await renderComposite(selectedTemplate, faceCanvas);
+
+      setPrediction(nextPrediction);
+      setResultUrl(nextResultUrl);
+      setCaptureStatus("complete");
+      setStatusText("샘플 적용 완료");
+    } catch (error) {
+      console.error(error);
+      setCaptureStatus("error");
+      setStatusText("샘플 오류");
+      setLastError(error instanceof Error ? error.message : "샘플 사진을 적용하지 못했습니다.");
+    } finally {
+      setActiveSampleId(null);
+    }
+  }
+
   async function renderComposite(template: TemplateConfig, faceCanvas: HTMLCanvasElement) {
     const templateImage = await loadImage(template.imageSrc);
     const canvas = canvasRef.current ?? document.createElement("canvas");
@@ -227,7 +283,9 @@ export function ExpressionStudio() {
     return canvas.toDataURL("image/png");
   }
 
-  const captureDisabled = modelState !== "ready" || !cameraReady || captureStatus === "capturing";
+  const busy = captureStatus === "capturing";
+  const captureDisabled = modelState !== "ready" || !cameraReady || busy;
+  const sampleDisabled = modelState !== "ready" || busy;
 
   return (
     <main className="min-h-screen bg-[var(--background)] px-4 py-4 text-[var(--foreground)] sm:px-6 lg:px-8">
@@ -294,6 +352,56 @@ export function ExpressionStudio() {
                   </button>
                 );
               })}
+            </div>
+
+            <div className="mt-5 border-t border-[var(--border)] pt-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold">샘플 얼굴</h2>
+                <span className="font-mono text-xs text-[var(--ink-soft)]">
+                  {sampleFaces.length}
+                </span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                {sampleFaces.map((sample) => (
+                  <div
+                    key={sample.id}
+                    className="rounded-lg border border-[var(--border)] bg-transparent p-2"
+                  >
+                    <button
+                      type="button"
+                      disabled={sampleDisabled}
+                      onClick={() => applySampleFace(sample)}
+                      className="grid w-full grid-cols-[58px_1fr] gap-3 text-left transition disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <span className="relative aspect-square overflow-hidden rounded-md bg-[var(--surface-muted)]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={sample.imageSrc}
+                          alt=""
+                          crossOrigin="anonymous"
+                          referrerPolicy="no-referrer"
+                          className="h-full w-full object-cover"
+                        />
+                      </span>
+                      <span className="min-w-0 self-center">
+                        <span className="block truncate text-sm font-semibold">{sample.name}</span>
+                        <span className="mt-1 block text-xs text-[var(--ink-soft)]">
+                          {expressionNamesKo[sample.expectedExpression]}
+                          {activeSampleId === sample.id ? " 적용 중" : ""}
+                        </span>
+                      </span>
+                    </button>
+                    <a
+                      href={sample.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 block truncate font-mono text-[11px] text-[var(--ink-soft)] underline-offset-2 hover:underline"
+                    >
+                      Commons · {sample.license}
+                    </a>
+                  </div>
+                ))}
+              </div>
             </div>
           </aside>
 
@@ -531,8 +639,31 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new window.Image();
     image.crossOrigin = "anonymous";
+    image.referrerPolicy = "no-referrer";
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error(`Failed to load image: ${src}`));
     image.src = src;
   });
+}
+
+function detectFace(
+  faceLandmarker: Awaited<ReturnType<typeof createFaceLandmarker>>,
+  frameCanvas: HTMLCanvasElement,
+) {
+  return withSuppressedMediaPipeInfoLogs(() => faceLandmarker.detect(frameCanvas));
+}
+
+async function loadImageCanvas(src: string): Promise<HTMLCanvasElement> {
+  const image = await loadImage(src);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas 2D context is not available");
+  }
+
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }

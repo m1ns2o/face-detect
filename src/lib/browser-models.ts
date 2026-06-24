@@ -6,6 +6,7 @@ import { scoresFromLogits, type EmotionScores } from "@/lib/emotions";
 const EMOTIEFF_INPUT_SIZE = 224;
 const IMAGE_NET_MEAN = [0.485, 0.456, 0.406] as const;
 const IMAGE_NET_STD = [0.229, 0.224, 0.225] as const;
+const MEDIAPIPE_INFO_LOG = "INFO: Created TensorFlow Lite XNNPACK delegate";
 
 export type EmotionRuntime = {
   predict(faceCanvas: HTMLCanvasElement): Promise<EmotionScores>;
@@ -17,15 +18,17 @@ export async function createFaceLandmarker(): Promise<FaceLandmarker> {
   );
   const vision = await FilesetResolver.forVisionTasks("/wasm/mediapipe");
 
-  return MediaPipeFaceLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath: "/models/mediapipe/face_landmarker.task",
-      delegate: "CPU",
-    },
-    numFaces: 1,
-    outputFaceBlendshapes: false,
-    runningMode: "IMAGE",
-  });
+  return withSuppressedMediaPipeInfoLogs(() =>
+    MediaPipeFaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: "/models/mediapipe/face_landmarker.task",
+        delegate: "CPU",
+      },
+      numFaces: 1,
+      outputFaceBlendshapes: false,
+      runningMode: "IMAGE",
+    }),
+  );
 }
 
 export async function createEmotionRuntime(): Promise<EmotionRuntime> {
@@ -94,4 +97,38 @@ export function preprocessFaceCanvas(faceCanvas: HTMLCanvasElement): Float32Arra
   }
 
   return input;
+}
+
+export function withSuppressedMediaPipeInfoLogs<T>(operation: () => T): T {
+  const originalError = console.error;
+  console.error = (...args: Parameters<typeof console.error>) => {
+    const message = args.map(String).join(" ");
+    if (message.includes(MEDIAPIPE_INFO_LOG)) {
+      return;
+    }
+    originalError(...args);
+  };
+
+  try {
+    const result = operation();
+    if (isPromiseLike(result)) {
+      return result.finally(() => {
+        console.error = originalError;
+      }) as T;
+    }
+
+    console.error = originalError;
+    return result;
+  } catch (error) {
+    console.error = originalError;
+    throw error;
+  }
+}
+
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { finally?: unknown }).finally === "function"
+  );
 }
