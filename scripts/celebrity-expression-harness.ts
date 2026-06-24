@@ -11,10 +11,11 @@ import {
   type ExpressionLabel,
 } from "../src/lib/emotions";
 
-type IdolCase = {
+type CelebrityExpressionCase = {
   id: string;
   name: string;
-  group: string;
+  role: string;
+  expectedExpression: ExpressionLabel;
   imageUrl: string;
   sourceUrl: string;
   license: string;
@@ -27,10 +28,12 @@ type RankedScore = {
   percent: string;
 };
 
-type IdolResult = {
+type CelebrityExpressionResult = {
   id: string;
   name: string;
-  group: string;
+  role: string;
+  expectedExpression: ExpressionLabel;
+  expectedExpressionKo: string;
   sourceUrl: string;
   license: string;
   imageSize: {
@@ -47,28 +50,31 @@ type IdolResult = {
   topLabelKo: string;
   confidence: number;
   confidencePercent: string;
+  matched: boolean;
   ranked: RankedScore[];
 };
 
 declare global {
   interface Window {
-    runIdolExpressionReport: (cases: IdolCase[]) => Promise<IdolResult[]>;
+    runCelebrityExpressionReport: (
+      cases: CelebrityExpressionCase[],
+    ) => Promise<CelebrityExpressionResult[]>;
   }
 }
 
-window.runIdolExpressionReport = async (cases) => {
+window.runCelebrityExpressionReport = async (cases) => {
   const faceLandmarker = await createFaceLandmarker();
   const emotionRuntime = await createEmotionRuntime();
-  const results: IdolResult[] = [];
+  const results: CelebrityExpressionResult[] = [];
 
   try {
-    for (const idolCase of cases) {
-      const frameCanvas = await loadImageCanvas(idolCase.imageUrl);
+    for (const testCase of cases) {
+      const frameCanvas = await loadImageCanvas(testCase.imageUrl);
       const detection = withSuppressedMediaPipeInfoLogs(() => faceLandmarker.detect(frameCanvas));
       const landmarks = detection.faceLandmarks[0];
 
       if (!landmarks?.length) {
-        throw new Error(`No face detected for ${idolCase.name}`);
+        throw new Error(`No face detected for ${testCase.name}`);
       }
 
       const faceRect = squareFaceRectFromLandmarks(
@@ -82,15 +88,17 @@ window.runIdolExpressionReport = async (cases) => {
       const top = ranked[0];
 
       if (!top) {
-        throw new Error(`No emotion scores returned for ${idolCase.name}`);
+        throw new Error(`No emotion scores returned for ${testCase.name}`);
       }
 
       results.push({
-        id: idolCase.id,
-        name: idolCase.name,
-        group: idolCase.group,
-        sourceUrl: idolCase.sourceUrl,
-        license: idolCase.license,
+        id: testCase.id,
+        name: testCase.name,
+        role: testCase.role,
+        expectedExpression: testCase.expectedExpression,
+        expectedExpressionKo: expressionNamesKo[testCase.expectedExpression],
+        sourceUrl: testCase.sourceUrl,
+        license: testCase.license,
         imageSize: {
           width: frameCanvas.width,
           height: frameCanvas.height,
@@ -105,6 +113,7 @@ window.runIdolExpressionReport = async (cases) => {
         topLabelKo: top.labelKo,
         confidence: top.score,
         confidencePercent: top.percent,
+        matched: top.label === testCase.expectedExpression,
         ranked,
       });
     }
@@ -126,24 +135,24 @@ function rankScores(scores: EmotionScores): RankedScore[] {
     }));
 }
 
-function loadImageCanvas(src: string): Promise<HTMLCanvasElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
+async function loadImageCanvas(src: string): Promise<HTMLCanvasElement> {
+  const response = await fetch(src);
+  if (!response.ok) {
+    throw new Error(`Failed to load image: ${src} (${response.status})`);
+  }
 
-      const context = canvas.getContext("2d");
-      if (!context) {
-        reject(new Error("Canvas 2D context is not available"));
-        return;
-      }
+  const bitmap = await createImageBitmap(await response.blob());
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
 
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas);
-    };
-    image.onerror = () => reject(new Error(`Failed to load image: ${src}`));
-    image.src = src;
-  });
+  const context = canvas.getContext("2d");
+  if (!context) {
+    bitmap.close();
+    throw new Error("Canvas 2D context is not available");
+  }
+
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas;
 }
