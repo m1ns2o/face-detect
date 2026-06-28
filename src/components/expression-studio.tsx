@@ -61,6 +61,7 @@ type SuccessfulSample = {
 
 const SAMPLE_COUNT = 5;
 const SAMPLE_DELAY_MS = 240;
+const CAPTURE_ELAPSED_TICK_MS = 100;
 
 export function ExpressionStudio() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0].id);
@@ -69,6 +70,8 @@ export function ExpressionStudio() {
   const [statusText, setStatusText] = useState("모델 준비 중");
   const [cameraReady, setCameraReady] = useState(false);
   const [prediction, setPrediction] = useState<EmotionPrediction | null>(null);
+  const [captureProgress, setCaptureProgress] = useState(0);
+  const [captureElapsedMs, setCaptureElapsedMs] = useState(0);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
 
@@ -77,6 +80,7 @@ export function ExpressionStudio() {
   const streamRef = useRef<MediaStream | null>(null);
   const faceLandmarkerRef = useRef<Awaited<ReturnType<typeof createFaceLandmarker>> | null>(null);
   const emotionRuntimeRef = useRef<EmotionRuntime | null>(null);
+  const captureProgressTimerRef = useRef<number | null>(null);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? templates[0],
@@ -86,11 +90,17 @@ export function ExpressionStudio() {
   const busy = captureStatus === "capturing";
   const captureDisabled = modelState !== "ready" || !cameraReady || busy;
   const confidenceValue = prediction ? Math.round(prediction.confidence * 100) : 0;
+  const displayProgressValue = prediction ? confidenceValue : captureProgress;
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setCameraReady(false);
+  }
+
+  function formatElapsedMs(elapsedMs: number) {
+    const seconds = Math.max(0, Math.round(elapsedMs / 1000));
+    return `${seconds}s`;
   }
 
   useEffect(() => {
@@ -127,6 +137,10 @@ export function ExpressionStudio() {
 
     return () => {
       mounted = false;
+      if (captureProgressTimerRef.current !== null) {
+        window.clearInterval(captureProgressTimerRef.current);
+        captureProgressTimerRef.current = null;
+      }
       stopCamera();
       faceLandmarkerRef.current?.close();
     };
@@ -186,47 +200,73 @@ export function ExpressionStudio() {
     setResultUrl(null);
     setLastError(null);
     setCaptureStatus("capturing");
+    setCaptureProgress(0);
+    setCaptureElapsedMs(0);
+
+    if (captureProgressTimerRef.current !== null) {
+      window.clearInterval(captureProgressTimerRef.current);
+    }
+
+    let elapsedMs = 0;
+    captureProgressTimerRef.current = window.setInterval(() => {
+      elapsedMs += CAPTURE_ELAPSED_TICK_MS;
+      setCaptureElapsedMs(elapsedMs);
+    }, CAPTURE_ELAPSED_TICK_MS);
 
     const samples: SuccessfulSample[] = [];
 
-    for (let index = 0; index < SAMPLE_COUNT; index += 1) {
-      setStatusText(`분석 중 ${index + 1}/${SAMPLE_COUNT}`);
-      const frameCanvas = captureVideoFrame(video);
-      const detection = detectFace(faceLandmarker, frameCanvas);
-      const landmarks = detection.faceLandmarks[0];
+    try {
+      for (let index = 0; index < SAMPLE_COUNT; index += 1) {
+        setCaptureProgress(((index + 1) / SAMPLE_COUNT) * 100);
+        setStatusText(`분석 중 ${index + 1}/${SAMPLE_COUNT}`);
+        const frameCanvas = captureVideoFrame(video);
+        const detection = detectFace(faceLandmarker, frameCanvas);
+        const landmarks = detection.faceLandmarks[0];
 
-      if (landmarks?.length) {
-        const faceRect = squareFaceRectFromLandmarks(
-          landmarks,
-          frameCanvas.width,
-          frameCanvas.height,
-        );
-        const faceCanvas = cropCanvasFromRect(frameCanvas, faceRect);
-        const scores = await emotionRuntime.predict(faceCanvas);
-        samples.push({ scores, faceCanvas });
+        if (landmarks?.length) {
+          const faceRect = squareFaceRectFromLandmarks(
+            landmarks,
+            frameCanvas.width,
+            frameCanvas.height,
+          );
+          const faceCanvas = cropCanvasFromRect(frameCanvas, faceRect);
+          const scores = await emotionRuntime.predict(faceCanvas);
+          samples.push({ scores, faceCanvas });
+        }
+
+        if (index < SAMPLE_COUNT - 1) {
+          await wait(SAMPLE_DELAY_MS);
+        }
       }
 
-      if (index < SAMPLE_COUNT - 1) {
-        await wait(SAMPLE_DELAY_MS);
+      if (samples.length === 0) {
+        setCaptureStatus("error");
+        setStatusText("얼굴 미검출");
+        setLastError("얼굴 영역을 찾지 못했습니다.");
+        return;
       }
-    }
 
-    if (samples.length === 0) {
+      const averaged = averageEmotionScores(samples.map((sample) => sample.scores));
+      const nextPrediction = predictionFromScores(averaged, selectedTemplate.targetEmotion);
+      const strongestSample = samples[samples.length - 1];
+      const nextResultUrl = await renderComposite(selectedTemplate, strongestSample.faceCanvas);
+
+      setPrediction(nextPrediction);
+      setResultUrl(nextResultUrl);
+      setCaptureStatus("complete");
+      setCaptureProgress(100);
+      setStatusText(nextPrediction.matched ? "표정 일치" : "표정 불일치");
+    } catch (error) {
+      console.error(error);
       setCaptureStatus("error");
-      setStatusText("얼굴 미검출");
-      setLastError("얼굴 영역을 찾지 못했습니다.");
-      return;
+      setStatusText("분석 오류");
+      setLastError("표정 분석 중 오류가 발생했습니다.");
+    } finally {
+      if (captureProgressTimerRef.current !== null) {
+        window.clearInterval(captureProgressTimerRef.current);
+        captureProgressTimerRef.current = null;
+      }
     }
-
-    const averaged = averageEmotionScores(samples.map((sample) => sample.scores));
-    const nextPrediction = predictionFromScores(averaged, selectedTemplate.targetEmotion);
-    const strongestSample = samples[samples.length - 1];
-    const nextResultUrl = await renderComposite(selectedTemplate, strongestSample.faceCanvas);
-
-    setPrediction(nextPrediction);
-    setResultUrl(nextResultUrl);
-    setCaptureStatus("complete");
-    setStatusText(nextPrediction.matched ? "표정 일치" : "표정 불일치");
   }
 
   async function renderComposite(template: TemplateConfig, faceCanvas: HTMLCanvasElement) {
@@ -294,6 +334,8 @@ export function ExpressionStudio() {
                       setSelectedTemplateId(template.id);
                       setPrediction(null);
                       setResultUrl(null);
+                      setCaptureProgress(0);
+                      setCaptureElapsedMs(0);
                       setCaptureStatus("idle");
                       setStatusText(modelState === "ready" ? "준비 완료" : "모델 준비 중");
                     }}
@@ -332,7 +374,11 @@ export function ExpressionStudio() {
                   웹캠
                 </h2>
               </CardTitle>
-              <CardDescription className="font-mono">{statusText}</CardDescription>
+              <CardDescription className="font-mono">
+                {captureStatus === "capturing"
+                  ? `${statusText} (${formatElapsedMs(captureElapsedMs)})`
+                  : statusText}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="relative aspect-[4/3] overflow-hidden rounded-lg border bg-black">
@@ -356,7 +402,9 @@ export function ExpressionStudio() {
                   <div className="absolute inset-0 grid place-items-center bg-black/50 text-white">
                     <div className="flex items-center gap-2 text-sm font-semibold">
                       <LoaderCircle className="size-5 animate-spin" aria-hidden />
-                      {statusText}
+                      {captureStatus === "capturing"
+                        ? `${statusText} (${formatElapsedMs(captureElapsedMs)})`
+                        : statusText}
                     </div>
                   </div>
                 )}
@@ -434,7 +482,10 @@ export function ExpressionStudio() {
               </div>
 
               <div className="mt-4">
-                <Progress value={confidenceValue} aria-label="표정 신뢰도" />
+                <Progress
+                  value={Math.round(displayProgressValue)}
+                  aria-label={prediction ? "표정 신뢰도" : "진행률"}
+                />
               </div>
 
               {prediction && (
