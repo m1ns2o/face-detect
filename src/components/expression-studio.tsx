@@ -293,13 +293,7 @@ export function ExpressionStudio() {
   return (
     <main className="min-h-screen bg-background px-4 py-4 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
-        <header className="flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="font-mono text-xs uppercase text-muted-foreground">local inference</p>
-            <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
-              표정 캡처 스튜디오
-            </h1>
-          </div>
+        <header className="flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-end md:justify-end">
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge
               icon={modelState === "ready" ? CheckCircle2 : LoaderCircle}
