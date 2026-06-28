@@ -36,7 +36,7 @@ export const expressionNamesKo: Record<ExpressionLabel, string> = {
   Disgust: "혐오",
   Fear: "두려움",
   Happiness: "기쁨",
-  Neutral: "중립",
+  Neutral: "무표정",
   Sadness: "슬픔",
   Surprise: "놀람",
 };
