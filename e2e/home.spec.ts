@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import path from "node:path";
 
 test("renders the studio shell", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "웹툰" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "현재 컷" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /샘플 웹툰/ }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /카메라 시작/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /PNG 저장/ })).toHaveAttribute(
     "aria-disabled",
@@ -28,16 +28,34 @@ test("shows a camera unsupported state", async ({ page }) => {
   await expect(page.getByText("이 브라우저는 웹캠 접근을 지원하지 않습니다.")).toBeVisible();
 });
 
-test("detects masked comic cuts from an uploaded image", async ({ page }) => {
+test("detects masked comic cuts from the built-in sample", async ({ page }) => {
   await page.goto("/");
 
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles(path.join(process.cwd(), "sample", "image.png"));
+  await page.getByRole("button", { name: /샘플 웹툰/ }).first().click();
 
   await expect(page.getByText("7컷 감지")).toBeVisible();
   await expect(page.getByRole("button", { name: /1컷/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /7컷/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Suga/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Kim Jisoo/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /PNG 저장/ })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+});
+
+test("applies a sample celebrity face to the active cut", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /샘플 웹툰/ }).first().click();
+  const sampleFaceButton = page.getByRole("button", { name: /Suga/ });
+
+  await expect(sampleFaceButton).toBeEnabled({ timeout: 120_000 });
+  await sampleFaceButton.click();
+
+  await expect(page.getByText(/진행\s*1\/7/)).toBeVisible({ timeout: 120_000 });
   await expect(page.getByRole("link", { name: /PNG 저장/ })).toHaveAttribute(
     "aria-disabled",
     "true",

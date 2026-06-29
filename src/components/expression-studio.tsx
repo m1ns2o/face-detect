@@ -46,6 +46,7 @@ import {
   scaleRect,
   type DetectedComicSlot,
 } from "@/lib/comic";
+import { SAMPLE_COMIC, SAMPLE_FACE_ASSETS, type SampleFaceAsset } from "@/lib/sample-assets";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -108,6 +109,7 @@ export function ExpressionStudio() {
   const [captureElapsedMs, setCaptureElapsedMs] = useState(0);
   const [compositeUrl, setCompositeUrl] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [sampleFaceBusyId, setSampleFaceBusyId] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -127,8 +129,10 @@ export function ExpressionStudio() {
   const totalSlots = comicProject?.slots.length ?? 0;
   const completionProgress = totalSlots > 0 ? (completedCount / totalSlots) * 100 : 0;
   const allComplete = totalSlots > 0 && completedCount === totalSlots;
-  const busy = captureStatus === "capturing" || uploadStatus === "analyzing";
+  const busy =
+    captureStatus === "capturing" || uploadStatus === "analyzing" || sampleFaceBusyId !== null;
   const captureDisabled = modelState !== "ready" || !cameraReady || !activeSlot || busy;
+  const sampleFaceDisabled = modelState !== "ready" || !activeSlot || !comicProject || busy;
   const activeCapture = activeSlot ? captures[activeSlot.id] : null;
   const nextSlot = comicProject?.slots[activeSlotIndex + 1] ?? null;
   const downloadName = `${fileNameWithoutExtension(comicProject?.fileName ?? "webtoon")}-face-webtoon.png`;
@@ -240,6 +244,40 @@ export function ExpressionStudio() {
         error instanceof Error
           ? error.message
           : "마스킹된 얼굴 위치를 찾지 못했습니다.",
+      );
+    }
+  }
+
+  async function loadSampleComic() {
+    setUploadStatus("analyzing");
+    setLastError(null);
+    setPrediction(null);
+    setCaptures({});
+    setCompositeUrl(null);
+    setCaptureProgress(0);
+    setCaptureElapsedMs(0);
+    setStatusText("샘플 웹툰 분석 중");
+
+    try {
+      const image = await loadImage(SAMPLE_COMIC.imageSrc);
+      const nextProject = analyzeComicImage(SAMPLE_COMIC.title, SAMPLE_COMIC.imageSrc, image);
+
+      setComicProject(nextProject);
+      setActiveSlotId(nextProject.slots[0]?.id ?? null);
+      setUploadStatus("ready");
+      setCaptureStatus("idle");
+      setStatusText(`${nextProject.slots.length}컷 준비`);
+    } catch (error) {
+      console.error(error);
+      setComicProject(null);
+      setActiveSlotId(null);
+      setUploadStatus("error");
+      setCaptureStatus("error");
+      setStatusText("샘플 분석 오류");
+      setLastError(
+        error instanceof Error
+          ? error.message
+          : "샘플 웹툰에서 마스킹된 얼굴 위치를 찾지 못했습니다.",
       );
     }
   }
@@ -438,6 +476,87 @@ export function ExpressionStudio() {
     }
   }
 
+  async function applySampleFace(preset: SampleFaceAsset) {
+    const faceLandmarker = faceLandmarkerRef.current;
+    const emotionRuntime = emotionRuntimeRef.current;
+
+    if (!comicProject || !activeSlot) {
+      setLastError("먼저 샘플 웹툰을 불러오거나 마스킹된 웹툰 이미지를 업로드해 주세요.");
+      return;
+    }
+
+    if (!faceLandmarker || !emotionRuntime) {
+      setLastError("분석 모델이 아직 준비되지 않았습니다.");
+      return;
+    }
+
+    setPrediction(null);
+    setLastError(null);
+    setSampleFaceBusyId(preset.id);
+    setCaptureStatus("capturing");
+    setCaptureProgress(15);
+    setCaptureElapsedMs(0);
+    setStatusText(`${preset.name} 분석 중`);
+
+    try {
+      const frameCanvas = await loadImageCanvas(preset.imageSrc);
+      setCaptureProgress(35);
+      const detection = detectFace(faceLandmarker, frameCanvas);
+      const landmarks = detection.faceLandmarks[0];
+
+      if (!landmarks?.length) {
+        setCaptureStatus("error");
+        setStatusText("얼굴 미검출");
+        setLastError(`${preset.name} 이미지에서 얼굴 영역을 찾지 못했습니다.`);
+        return;
+      }
+
+      const faceRect = squareFaceRectFromLandmarks(
+        landmarks,
+        frameCanvas.width,
+        frameCanvas.height,
+      );
+      const faceCanvas = cropCanvasFromRect(frameCanvas, faceRect);
+      setCaptureProgress(70);
+      const scores = await emotionRuntime.predict(faceCanvas);
+      const nextPrediction = predictionFromScores(scores, activeSlot.targetEmotion);
+      const nextCaptures = {
+        ...captures,
+        [activeSlot.id]: {
+          faceCanvas,
+          prediction: nextPrediction,
+        },
+      };
+      const nextCompositeUrl = await renderComicComposite(comicProject, nextCaptures);
+
+      setCaptures(nextCaptures);
+      setPrediction(nextPrediction);
+      setCompositeUrl(nextCompositeUrl);
+      setCaptureStatus("complete");
+      setCaptureProgress(100);
+
+      const nextIncompleteSlot = comicProject.slots
+        .slice(activeSlot.index + 1)
+        .find((slot) => !nextCaptures[slot.id]);
+
+      if (nextPrediction.matched && nextIncompleteSlot) {
+        setActiveSlotId(nextIncompleteSlot.id);
+        setStatusText(`${nextIncompleteSlot.index + 1}컷 준비`);
+      } else if (Object.keys(nextCaptures).length === comicProject.slots.length) {
+        setStatusText("완성본 준비");
+      } else {
+        setStatusText(`${preset.name} 적용`);
+      }
+    } catch (error) {
+      console.error(error);
+      setCaptureStatus("error");
+      setStatusText("테스트 얼굴 오류");
+      setLastError("테스트 얼굴을 분석하거나 합성하는 중 오류가 발생했습니다.");
+    } finally {
+      setSampleFaceBusyId(null);
+    }
+  }
+
   async function renderComicComposite(
     project: ComicProject,
     nextCaptures: Record<string, CapturedComicSlot>,
@@ -485,20 +604,32 @@ export function ExpressionStudio() {
               active={Boolean(comicProject)}
             />
           </div>
-          <label
-            htmlFor="comic-upload"
-            className={cn(
-              buttonVariants({ variant: "default", size: "lg" }),
-              busy && "pointer-events-none opacity-50",
-            )}
-          >
-            {uploadStatus === "analyzing" ? (
-              <LoaderCircle data-icon="inline-start" className="size-4 animate-spin" />
-            ) : (
-              <Upload data-icon="inline-start" className="size-4" />
-            )}
-            이미지 업로드
-          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={loadSampleComic}
+              disabled={busy}
+            >
+              <ImagePlus data-icon="inline-start" className="size-4" />
+              샘플 웹툰
+            </Button>
+            <label
+              htmlFor="comic-upload"
+              className={cn(
+                buttonVariants({ variant: "default", size: "lg" }),
+                busy && "pointer-events-none opacity-50",
+              )}
+            >
+              {uploadStatus === "analyzing" ? (
+                <LoaderCircle data-icon="inline-start" className="size-4 animate-spin" />
+              ) : (
+                <Upload data-icon="inline-start" className="size-4" />
+              )}
+              이미지 업로드
+            </label>
+          </div>
           <input
             id="comic-upload"
             type="file"
@@ -579,6 +710,16 @@ export function ExpressionStudio() {
                     <span className="text-sm font-medium text-muted-foreground">
                       마스크 이미지 대기
                     </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={loadSampleComic}
+                      disabled={busy}
+                    >
+                      <ImagePlus data-icon="inline-start" className="size-4" />
+                      샘플 웹툰
+                    </Button>
                   </div>
                 </div>
               )}
@@ -653,6 +794,68 @@ export function ExpressionStudio() {
                     <ArrowRight data-icon="inline-start" className="size-4" />
                     다음 컷
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <h2>테스트 얼굴</h2>
+                </CardTitle>
+                <CardDescription>
+                  {activeSlot ? `${activeSlot.index + 1}컷에 바로 적용` : "웹툰 선택 대기"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SAMPLE_FACE_ASSETS.map((preset) => {
+                    const recommended = preset.expectedExpression === activeSlot?.targetEmotion;
+                    const loading = sampleFaceBusyId === preset.id;
+
+                    return (
+                      <div key={preset.id} className="rounded-lg border bg-background p-2">
+                        <Button
+                          type="button"
+                          variant={recommended ? "secondary" : "ghost"}
+                          onClick={() => applySampleFace(preset)}
+                          disabled={sampleFaceDisabled}
+                          className="h-auto w-full justify-start gap-3 p-2 text-left"
+                        >
+                          <span className="relative size-14 shrink-0 overflow-hidden rounded-md bg-muted">
+                            <img
+                              src={preset.imageSrc}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">
+                              {preset.name}
+                            </span>
+                            <span className="mt-1 block truncate text-xs text-muted-foreground">
+                              {expressionNamesKo[preset.expectedExpression]} · {preset.role}
+                            </span>
+                          </span>
+                          {loading ? (
+                            <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                          ) : recommended ? (
+                            <Badge variant="outline" className="h-6 rounded-md px-2">
+                              추천
+                            </Badge>
+                          ) : null}
+                        </Button>
+                        <a
+                          href={preset.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 block truncate px-2 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          {preset.license}
+                        </a>
+                      </div>
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -1007,6 +1210,21 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     image.onerror = () => reject(new Error(`Failed to load image: ${src}`));
     image.src = src;
   });
+}
+
+async function loadImageCanvas(src: string): Promise<HTMLCanvasElement> {
+  const image = await loadImage(src);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas 2D context is not available");
+  }
+
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }
 
 function fileNameWithoutExtension(fileName: string) {

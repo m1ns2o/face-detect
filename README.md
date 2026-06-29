@@ -6,19 +6,19 @@
 
 - 사용자 얼굴은 브라우저 메모리에서만 처리하고 서버로 업로드하지 않습니다.
 - 얼굴 탐지 + 표정 추론 + 합성의 전 과정을 클라이언트에서 수행합니다.
-- 미리 준비한 템플릿(학습용 빈 슬롯)에 적절한 표정이 들어왔는지 즉시 확인합니다.
-- 테스트 이미지나 테스트 템플릿은 앱 번들에 넣지 않고, 오직 테스트 스크립트에서만 사용합니다.
+- 마스킹된 웹툰 이미지를 업로드하면 얼굴 삽입 위치를 자동 추정합니다.
+- 샘플 웹툰과 테스트용 공개 라이선스 인물 이미지를 앱에서 바로 불러와 흐름을 확인할 수 있습니다.
 
 ## 실행 화면 핵심 흐름
 
 1. 앱 진입 시 모델 로딩 (`MediaPipe Face Landmarker`, `EmotiEffLib ONNX`)
 2. 카메라 시작
-3. 템플릿 선택 (목표 표정 지정)
-4. 촬영 시작
-5. 매 프레임 얼굴 탐지 후 얼굴만 크롭
-6. 5개 프레임(기본) 결과를 평균 내어 최종 표정 점수 산출
-7. 슬롯 영역에 얼굴을 타원 마스크로 합성
-8. 최종 결과물 미리보기 및 PNG 다운로드
+3. 샘플 웹툰을 불러오거나 직접 만든 마스킹 웹툰 이미지 업로드
+4. 자동 감지된 컷을 순서대로 선택
+5. 웹캠 촬영 또는 테스트 얼굴 프리셋 적용
+6. 얼굴 탐지 후 얼굴만 크롭하고 표정 점수 산출
+7. 현재 컷의 마스킹 위치에 얼굴을 타원 마스크로 합성
+8. 모든 컷 완료 후 최종 웹툰 PNG 다운로드
 
 ## 기술 스택
 
@@ -44,6 +44,10 @@
   - 얼굴 정규화 크롭, 슬롯 좌표 변환, 커버/클램프 유틸리티
 - `src/lib/templates.ts`
   - 템플릿 메타데이터 (`id`, `title`, `targetEmotion`, `faceSlot`)
+- `src/lib/comic.ts`
+  - 밝은 원형 마스크 감지, 컷 영역 추정, 웹툰 좌표 정렬 유틸리티
+- `src/lib/sample-assets.ts`
+  - 앱 내 샘플 웹툰과 공개 라이선스 테스트 얼굴 메타데이터
 - `src/components/ui/*`
   - `shadcn` 기반 UI 컴포넌트
 - `public/models`
@@ -51,6 +55,10 @@
   - `mediapipe/face_landmarker.task`
 - `public/wasm`
   - `ort/`, `mediapipe/` 런타임 파일
+- `public/sample-comics`
+  - 앱에서 바로 불러오는 샘플 마스킹 웹툰
+- `public/sample-faces`
+  - 앱 테스트 모드에서 사용하는 공개 라이선스 인물 이미지
 - `scripts/korean-idol-expression-report.mjs`
   - 한국인 아이돌 표정 테스트를 실행해 레포트 생성
 - `scripts/korean-idol-expression-harness.ts`
@@ -74,9 +82,26 @@
   - 기본 임계값: `0.45`
   - `matched = topLabel === targetEmotion && confidence >= 0.45`
 - 합성
-  - 템플릿 이미지에 얼굴 슬롯(정규화 좌표)을 픽셀 단위로 변환
-  - 슬롯 크기 비율에 맞게 얼굴을 cover 방식으로 맞춘 뒤, 타원 마스크로 컷팅
+  - 업로드/샘플 웹툰에서 감지된 마스크 좌표를 사용
+  - 마스크 크기 비율에 맞게 얼굴을 cover 방식으로 맞춘 뒤, 타원 마스크로 컷팅
   - 캔버스 출력물을 PNG Data URL로 생성
+
+## 샘플 테스트 모드
+
+- `샘플 웹툰` 버튼을 누르면 `public/sample-comics/classroom-webtoon.png`가 로드됩니다.
+- 앱이 밝은 원형 마스크를 감지해 7개 컷을 순서대로 구성합니다.
+- `테스트 얼굴` 영역의 인물 이미지를 클릭하면 웹캠 없이도 현재 컷에 얼굴 합성을 테스트할 수 있습니다.
+- 테스트 얼굴도 실제 모델 경로를 탑니다. 즉, 이미지에서 얼굴을 찾고, 얼굴을 크롭하고, 표정을 추론한 뒤 현재 컷에 합성합니다.
+
+### 테스트 얼굴 출처
+
+| Target | Name | Source | License |
+| --- | --- | --- | --- |
+| 무표정 | Suga (BTS) | https://commons.wikimedia.org/wiki/File:Suga_at_a_fanmeeting,_22_September_2013.jpg | CC BY 4.0 |
+| 기쁨 | Kim Jisoo (BLACKPINK) | https://commons.wikimedia.org/wiki/File:Kim_Jisoo_in_July_2023_05_(cropped).jpg | CC BY 4.0 |
+| 슬픔 | Jennie Kim (BLACKPINK) | https://commons.wikimedia.org/wiki/File%3A171028_%ED%8F%89%EC%B0%BD_%EB%AE%A4%EC%A7%81%ED%8E%98%EC%8A%A4%ED%83%80_-_%EC%A0%9C%EB%8B%88%28%EB%B8%94%EB%9E%99%ED%95%91%ED%81%AC%29_%27STAY%27_4K_60P_%EC%A7%81%EC%BA%A0_by_DaftTaengk_%281%29.png | CC BY 3.0 |
+| 분노 | Byun Baekhyun (EXO) | https://commons.wikimedia.org/wiki/File:Byun_Baek-hyun_at_Korea_Music_Festival_on_October,_1_2017_(1).png | CC BY 3.0 |
+| 놀람 | Jang Wonyoung (IVE) | https://commons.wikimedia.org/wiki/File:Jang_Wonyoung_at_Produce48_9.png | CC BY-SA 3.0 |
 
 ## 프라이버시 정책
 
