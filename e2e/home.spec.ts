@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
+import path from "node:path";
 
 test("renders the studio shell", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "템플릿" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "웹툰" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "현재 컷" })).toBeVisible();
   await expect(page.getByRole("button", { name: /카메라 시작/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /PNG 저장/ })).toHaveAttribute(
     "aria-disabled",
@@ -24,4 +26,20 @@ test("shows a camera unsupported state", async ({ page }) => {
   await page.getByRole("button", { name: /카메라 시작/ }).click();
 
   await expect(page.getByText("이 브라우저는 웹캠 접근을 지원하지 않습니다.")).toBeVisible();
+});
+
+test("detects masked comic cuts from an uploaded image", async ({ page }) => {
+  await page.goto("/");
+
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles(path.join(process.cwd(), "sample", "image.png"));
+
+  await expect(page.getByText("7컷 감지")).toBeVisible();
+  await expect(page.getByRole("button", { name: /1컷/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /7컷/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /PNG 저장/ })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 });
