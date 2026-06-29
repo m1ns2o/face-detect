@@ -78,7 +78,7 @@
   - 출력 로짓에 softmax 적용해 감정 확률 벡터 생성
   - 5개 프레임 평균치 기반으로 최종 판별
 - 매칭 규칙
-  - `TARGET_EXPRESSIONS`: `Neutral`, `Happiness`, `Sadness`, `Anger`, `Surprise`
+  - `TARGET_EXPRESSIONS`: `Neutral`, `Happiness`, `Sadness`, `Anger`, `Surprise`, `Fear`, `Disgust`
   - 기본 임계값: `0.45`
   - `matched = topLabel === targetEmotion && confidence >= 0.45`
 - 합성

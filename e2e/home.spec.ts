@@ -1,17 +1,18 @@
 import { expect, test } from "@playwright/test";
 
-test("renders the studio shell", async ({ page }) => {
+test("renders the main studio without test fixtures", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "웹툰" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "현재 컷" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /샘플 웹툰/ }).first()).toBeVisible();
+  await expect(page.getByText("이미지 업로드")).toBeVisible();
   await expect(page.getByRole("button", { name: /카메라 시작/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /샘플 웹툰/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "테스트 얼굴" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /PNG 저장/ })).toHaveAttribute(
     "aria-disabled",
     "true",
   );
-  await expect(page.getByText("샘플 얼굴")).toHaveCount(0);
 });
 
 test("shows a camera unsupported state", async ({ page }) => {
@@ -28,8 +29,8 @@ test("shows a camera unsupported state", async ({ page }) => {
   await expect(page.getByText("이 브라우저는 웹캠 접근을 지원하지 않습니다.")).toBeVisible();
 });
 
-test("detects masked comic cuts from the built-in sample", async ({ page }) => {
-  await page.goto("/");
+test("detects masked comic cuts from the test route sample", async ({ page }) => {
+  await page.goto("/test");
 
   await page.getByRole("button", { name: /샘플 웹툰/ }).first().click();
 
@@ -44,10 +45,10 @@ test("detects masked comic cuts from the built-in sample", async ({ page }) => {
   );
 });
 
-test("applies a sample celebrity face to the active cut", async ({ page }) => {
+test("applies a sample celebrity face from the test route", async ({ page }) => {
   test.setTimeout(120_000);
 
-  await page.goto("/");
+  await page.goto("/test");
 
   await page.getByRole("button", { name: /샘플 웹툰/ }).first().click();
   const sampleFaceButton = page.getByRole("button", { name: /Suga/ });

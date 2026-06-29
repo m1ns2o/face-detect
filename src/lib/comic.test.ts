@@ -1,8 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { detectComicFaceSlots, sortRectsReadingOrder, type RgbaImageData } from "@/lib/comic";
+import {
+  detectComicFaceSlots,
+  detectComicPanels,
+  sortRectsReadingOrder,
+  type RgbaImageData,
+} from "@/lib/comic";
 import type { PixelRect } from "@/lib/canvas";
 
 describe("comic mask detection", () => {
+  it("detects gutter-separated comic panels before assigning masks", () => {
+    const imageData = createImageData(420, 260, [255, 255, 255, 255]);
+
+    drawRect(imageData, { x: 12, y: 12, width: 190, height: 108 }, [230, 210, 180, 255]);
+    drawRect(imageData, { x: 216, y: 12, width: 190, height: 108 }, [230, 210, 180, 255]);
+    drawRect(imageData, { x: 12, y: 136, width: 190, height: 108 }, [230, 210, 180, 255]);
+    drawRect(imageData, { x: 216, y: 136, width: 190, height: 108 }, [230, 210, 180, 255]);
+    drawPanelBorders(imageData, [
+      { x: 12, y: 12, width: 190, height: 108 },
+      { x: 216, y: 12, width: 190, height: 108 },
+      { x: 12, y: 136, width: 190, height: 108 },
+      { x: 216, y: 136, width: 190, height: 108 },
+    ]);
+    drawEllipse(imageData, 80, 62, 23, 28, [248, 248, 246, 255]);
+    drawEllipse(imageData, 286, 64, 26, 27, [248, 248, 246, 255]);
+    drawEllipse(imageData, 82, 186, 24, 26, [248, 248, 246, 255]);
+
+    const panels = detectComicPanels(imageData);
+    const slots = detectComicFaceSlots(imageData);
+
+    expect(panels).toHaveLength(4);
+    expect(slots).toHaveLength(3);
+    expect(slots[0].panelRect.x).toBeLessThan(slots[1].panelRect.x);
+    expect(slots[2].panelRect.y).toBeGreaterThan(slots[0].panelRect.y);
+  });
+
   it("finds circular face masks while ignoring wide speech bubbles", () => {
     const imageData = createImageData(400, 240, [230, 210, 180, 255]);
 
@@ -18,6 +49,7 @@ describe("comic mask detection", () => {
     expect(slots.map((slot) => slot.index)).toEqual([0, 1, 2]);
     expect(slots[0].rect.x).toBeLessThan(slots[1].rect.x);
     expect(slots[2].rect.y).toBeGreaterThan(slots[0].rect.y);
+    expect(slots[0].panelRect.width).toBeGreaterThan(slots[0].rect.width);
   });
 
   it("sorts masks by reading order", () => {
@@ -60,6 +92,23 @@ function drawPanelLines(imageData: RgbaImageData, xLines: number[], yLines: numb
 
   for (const y of yLines) {
     drawRect(imageData, { x: 0, y, width: imageData.width, height: 3 }, [18, 18, 18, 255]);
+  }
+}
+
+function drawPanelBorders(imageData: RgbaImageData, rects: PixelRect[]) {
+  for (const rect of rects) {
+    drawRect(imageData, { x: rect.x, y: rect.y, width: rect.width, height: 3 }, [18, 18, 18, 255]);
+    drawRect(
+      imageData,
+      { x: rect.x, y: rect.y + rect.height - 3, width: rect.width, height: 3 },
+      [18, 18, 18, 255],
+    );
+    drawRect(imageData, { x: rect.x, y: rect.y, width: 3, height: rect.height }, [18, 18, 18, 255]);
+    drawRect(
+      imageData,
+      { x: rect.x + rect.width - 3, y: rect.y, width: 3, height: rect.height },
+      [18, 18, 18, 255],
+    );
   }
 }
 

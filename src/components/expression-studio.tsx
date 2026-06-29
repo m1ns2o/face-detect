@@ -46,7 +46,7 @@ import {
   scaleRect,
   type DetectedComicSlot,
 } from "@/lib/comic";
-import { SAMPLE_COMIC, SAMPLE_FACE_ASSETS, type SampleFaceAsset } from "@/lib/sample-assets";
+import type { SampleComicAsset, SampleFaceAsset } from "@/lib/sample-assets";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -89,13 +89,22 @@ type CapturedComicSlot = {
   prediction: EmotionPrediction;
 };
 
+type ExpressionStudioProps = {
+  testAssets?: {
+    sampleComic: SampleComicAsset;
+    sampleFaces: readonly SampleFaceAsset[];
+  };
+};
+
 const SAMPLE_COUNT = 5;
 const SAMPLE_DELAY_MS = 240;
 const CAPTURE_ELAPSED_TICK_MS = 100;
 const MAX_DETECTION_SIDE = 1200;
 const MAX_PANEL_PREVIEW_SIDE = 640;
 
-export function ExpressionStudio() {
+export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
+  const testMode = Boolean(testAssets);
+  const sampleFaces = testAssets?.sampleFaces ?? [];
   const [modelState, setModelState] = useState<ModelState>("loading");
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [captureStatus, setCaptureStatus] = useState<CaptureStatus>("idle");
@@ -132,7 +141,8 @@ export function ExpressionStudio() {
   const busy =
     captureStatus === "capturing" || uploadStatus === "analyzing" || sampleFaceBusyId !== null;
   const captureDisabled = modelState !== "ready" || !cameraReady || !activeSlot || busy;
-  const sampleFaceDisabled = modelState !== "ready" || !activeSlot || !comicProject || busy;
+  const sampleFaceDisabled =
+    !testMode || modelState !== "ready" || !activeSlot || !comicProject || busy;
   const activeCapture = activeSlot ? captures[activeSlot.id] : null;
   const nextSlot = comicProject?.slots[activeSlotIndex + 1] ?? null;
   const downloadName = `${fileNameWithoutExtension(comicProject?.fileName ?? "webtoon")}-face-webtoon.png`;
@@ -249,6 +259,10 @@ export function ExpressionStudio() {
   }
 
   async function loadSampleComic() {
+    if (!testAssets) {
+      return;
+    }
+
     setUploadStatus("analyzing");
     setLastError(null);
     setPrediction(null);
@@ -259,8 +273,12 @@ export function ExpressionStudio() {
     setStatusText("샘플 웹툰 분석 중");
 
     try {
-      const image = await loadImage(SAMPLE_COMIC.imageSrc);
-      const nextProject = analyzeComicImage(SAMPLE_COMIC.title, SAMPLE_COMIC.imageSrc, image);
+      const image = await loadImage(testAssets.sampleComic.imageSrc);
+      const nextProject = analyzeComicImage(
+        testAssets.sampleComic.title,
+        testAssets.sampleComic.imageSrc,
+        image,
+      );
 
       setComicProject(nextProject);
       setActiveSlotId(nextProject.slots[0]?.id ?? null);
@@ -605,16 +623,18 @@ export function ExpressionStudio() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              onClick={loadSampleComic}
-              disabled={busy}
-            >
-              <ImagePlus data-icon="inline-start" className="size-4" />
-              샘플 웹툰
-            </Button>
+            {testMode && (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={loadSampleComic}
+                disabled={busy}
+              >
+                <ImagePlus data-icon="inline-start" className="size-4" />
+                샘플 웹툰
+              </Button>
+            )}
             <label
               htmlFor="comic-upload"
               className={cn(
@@ -710,16 +730,18 @@ export function ExpressionStudio() {
                     <span className="text-sm font-medium text-muted-foreground">
                       마스크 이미지 대기
                     </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={loadSampleComic}
-                      disabled={busy}
-                    >
-                      <ImagePlus data-icon="inline-start" className="size-4" />
-                      샘플 웹툰
-                    </Button>
+                    {testMode && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={loadSampleComic}
+                        disabled={busy}
+                      >
+                        <ImagePlus data-icon="inline-start" className="size-4" />
+                        샘플 웹툰
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -798,67 +820,69 @@ export function ExpressionStudio() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <h2>테스트 얼굴</h2>
-                </CardTitle>
-                <CardDescription>
-                  {activeSlot ? `${activeSlot.index + 1}컷에 바로 적용` : "웹툰 선택 대기"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {SAMPLE_FACE_ASSETS.map((preset) => {
-                    const recommended = preset.expectedExpression === activeSlot?.targetEmotion;
-                    const loading = sampleFaceBusyId === preset.id;
+            {testMode && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>
+                    <h2>테스트 얼굴</h2>
+                  </CardTitle>
+                  <CardDescription>
+                    {activeSlot ? `${activeSlot.index + 1}컷에 바로 적용` : "웹툰 선택 대기"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {sampleFaces.map((preset) => {
+                      const recommended = preset.expectedExpression === activeSlot?.targetEmotion;
+                      const loading = sampleFaceBusyId === preset.id;
 
-                    return (
-                      <div key={preset.id} className="rounded-lg border bg-background p-2">
-                        <Button
-                          type="button"
-                          variant={recommended ? "secondary" : "ghost"}
-                          onClick={() => applySampleFace(preset)}
-                          disabled={sampleFaceDisabled}
-                          className="h-auto w-full justify-start gap-3 p-2 text-left"
-                        >
-                          <span className="relative size-14 shrink-0 overflow-hidden rounded-md bg-muted">
-                            <img
-                              src={preset.imageSrc}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">
-                              {preset.name}
+                      return (
+                        <div key={preset.id} className="rounded-lg border bg-background p-2">
+                          <Button
+                            type="button"
+                            variant={recommended ? "secondary" : "ghost"}
+                            onClick={() => applySampleFace(preset)}
+                            disabled={sampleFaceDisabled}
+                            className="h-auto w-full justify-start gap-3 p-2 text-left"
+                          >
+                            <span className="relative size-14 shrink-0 overflow-hidden rounded-md bg-muted">
+                              <img
+                                src={preset.imageSrc}
+                                alt=""
+                                className="h-full w-full object-cover"
+                              />
                             </span>
-                            <span className="mt-1 block truncate text-xs text-muted-foreground">
-                              {expressionNamesKo[preset.expectedExpression]} · {preset.role}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">
+                                {preset.name}
+                              </span>
+                              <span className="mt-1 block truncate text-xs text-muted-foreground">
+                                {expressionNamesKo[preset.expectedExpression]} · {preset.role}
+                              </span>
                             </span>
-                          </span>
-                          {loading ? (
-                            <LoaderCircle className="size-4 animate-spin" aria-hidden />
-                          ) : recommended ? (
-                            <Badge variant="outline" className="h-6 rounded-md px-2">
-                              추천
-                            </Badge>
-                          ) : null}
-                        </Button>
-                        <a
-                          href={preset.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-1 block truncate px-2 text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          {preset.license}
-                        </a>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+                            {loading ? (
+                              <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                            ) : recommended ? (
+                              <Badge variant="outline" className="h-6 rounded-md px-2">
+                                추천
+                              </Badge>
+                            ) : null}
+                          </Button>
+                          <a
+                            href={preset.sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 block truncate px-2 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            {preset.license}
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>

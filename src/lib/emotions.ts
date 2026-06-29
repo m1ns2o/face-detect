@@ -26,6 +26,8 @@ export const TARGET_EXPRESSIONS = [
   "Sadness",
   "Anger",
   "Surprise",
+  "Fear",
+  "Disgust",
 ] as const satisfies readonly ExpressionLabel[];
 
 export const MATCH_CONFIDENCE_THRESHOLD = 0.45;
@@ -34,7 +36,7 @@ export const expressionNamesKo: Record<ExpressionLabel, string> = {
   Anger: "분노",
   Contempt: "경멸",
   Disgust: "혐오",
-  Fear: "두려움",
+  Fear: "불안",
   Happiness: "기쁨",
   Neutral: "무표정",
   Sadness: "슬픔",

@@ -6,9 +6,23 @@ import {
   predictionFromScores,
   scoresFromProbabilities,
   softmax,
+  TARGET_EXPRESSIONS,
 } from "@/lib/emotions";
 
 describe("emotion utilities", () => {
+  it("keeps seven target expressions while preserving the model output labels", () => {
+    expect(EXPRESSION_LABELS).toHaveLength(8);
+    expect(TARGET_EXPRESSIONS).toEqual([
+      "Neutral",
+      "Happiness",
+      "Sadness",
+      "Anger",
+      "Surprise",
+      "Fear",
+      "Disgust",
+    ]);
+  });
+
   it("computes a stable softmax", () => {
     const probabilities = softmax([1000, 1001, 1002]);
 
