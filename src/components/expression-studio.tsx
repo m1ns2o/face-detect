@@ -17,7 +17,14 @@ import {
   Video,
   type LucideIcon,
 } from "lucide-react";
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type DragEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   createEmotionRuntime,
   createFaceLandmarker,
@@ -119,6 +126,7 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
   const [compositeUrl, setCompositeUrl] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   const [sampleFaceBusyId, setSampleFaceBusyId] = useState<string | null>(null);
+  const [isDraggingUpload, setIsDraggingUpload] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -136,7 +144,6 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
     ? comicProject.slots.filter((slot) => Boolean(captures[slot.id])).length
     : 0;
   const totalSlots = comicProject?.slots.length ?? 0;
-  const completionProgress = totalSlots > 0 ? (completedCount / totalSlots) * 100 : 0;
   const allComplete = totalSlots > 0 && completedCount === totalSlots;
   const busy =
     captureStatus === "capturing" || uploadStatus === "analyzing" || sampleFaceBusyId !== null;
@@ -209,14 +216,7 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
     };
   }, [comicProject?.imageSrc]);
 
-  async function handleComicUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-
-    if (!file) {
-      return;
-    }
-
+  async function loadComicFile(file: File) {
     if (!file.type.startsWith("image/")) {
       setUploadStatus("error");
       setLastError("이미지 파일만 업로드할 수 있습니다.");
@@ -256,6 +256,49 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
           : "마스킹된 얼굴 위치를 찾지 못했습니다.",
       );
     }
+  }
+
+  async function handleComicUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+
+    if (file) {
+      await loadComicFile(file);
+    }
+  }
+
+  function handleUploadDragOver(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+
+    if (!busy) {
+      setIsDraggingUpload(true);
+    }
+  }
+
+  function handleUploadDragLeave(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setIsDraggingUpload(false);
+  }
+
+  async function handleUploadDrop(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setIsDraggingUpload(false);
+
+    if (busy) {
+      return;
+    }
+
+    const file = Array.from(event.dataTransfer.files).find((item) =>
+      item.type.startsWith("image/"),
+    );
+
+    if (!file) {
+      setUploadStatus("error");
+      setLastError("드롭한 항목에서 이미지 파일을 찾지 못했습니다.");
+      return;
+    }
+
+    await loadComicFile(file);
   }
 
   async function loadSampleComic() {
@@ -473,8 +516,9 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
         .slice(activeSlot.index + 1)
         .find((slot) => !nextCaptures[slot.id]);
 
-      if (nextPrediction.matched && nextIncompleteSlot) {
+      if (nextIncompleteSlot) {
         setActiveSlotId(nextIncompleteSlot.id);
+        setPrediction(null);
         setStatusText(`${nextIncompleteSlot.index + 1}컷 준비`);
       } else if (Object.keys(nextCaptures).length === comicProject.slots.length) {
         setStatusText("완성본 준비");
@@ -557,8 +601,9 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
         .slice(activeSlot.index + 1)
         .find((slot) => !nextCaptures[slot.id]);
 
-      if (nextPrediction.matched && nextIncompleteSlot) {
+      if (nextIncompleteSlot) {
         setActiveSlotId(nextIncompleteSlot.id);
+        setPrediction(null);
         setStatusText(`${nextIncompleteSlot.index + 1}컷 준비`);
       } else if (Object.keys(nextCaptures).length === comicProject.slots.length) {
         setStatusText("완성본 준비");
@@ -605,6 +650,240 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
     return canvas.toDataURL("image/png");
   }
 
+  function renderCurrentCutCard(className?: string) {
+    return (
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle>
+            <h2>현재 컷</h2>
+          </CardTitle>
+          <CardDescription>
+            {activeSlot
+              ? `${activeSlot.index + 1}/${totalSlots} · ${
+                  expressionNamesKo[activeSlot.targetEmotion]
+                }`
+              : "업로드 대기"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div
+            className="relative grid min-h-64 place-items-center overflow-hidden rounded-lg border bg-muted"
+            style={{
+              aspectRatio: activeSlot
+                ? `${activeSlot.panelRect.width} / ${activeSlot.panelRect.height}`
+                : "16 / 9",
+            }}
+          >
+            {activeSlot ? (
+              <img
+                src={activeSlot.panelPreviewSrc}
+                alt={`${activeSlot.index + 1}컷`}
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <ImagePlus className="size-10 text-muted-foreground" aria-hidden />
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <label className="grid gap-2 text-sm font-medium">
+              목표 표정
+              <select
+                value={activeSlot?.targetEmotion ?? "Neutral"}
+                disabled={!activeSlot || busy}
+                onChange={(event) => {
+                  if (activeSlot) {
+                    updateSlotTarget(activeSlot.id, event.target.value as ExpressionLabel);
+                  }
+                }}
+                className="h-9 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+              >
+                {COMIC_TARGET_EXPRESSIONS.map((label) => (
+                  <option key={label} value={label}>
+                    {expressionNamesKo[label]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              disabled={!nextSlot || !activeCapture || busy}
+              onClick={() => {
+                if (nextSlot) {
+                  selectSlot(nextSlot.id);
+                }
+              }}
+            >
+              <ArrowRight data-icon="inline-start" className="size-4" />
+              다음 컷
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  function renderCompletionPreview() {
+    if (!allComplete || !compositeUrl) {
+      return null;
+    }
+
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>완성본</h2>
+          </CardTitle>
+          <CardDescription>모든 컷 촬영이 끝났습니다.</CardDescription>
+          <CardAction>
+            <Badge variant="default" className="font-mono">
+              100%
+            </Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <div
+            className="relative grid max-h-[72vh] place-items-center overflow-hidden rounded-lg border bg-muted"
+            style={{
+              aspectRatio: `${comicProject?.width ?? 1} / ${comicProject?.height ?? 1}`,
+            }}
+          >
+            <img
+              src={compositeUrl}
+              alt="웹툰 완성본 미리보기"
+              className="h-full w-full object-contain"
+            />
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-4">
+            <MetricRow label="진행" value={`${completedCount}/${totalSlots}`} />
+            <MetricRow
+              label="마지막 목표"
+              value={activeSlot ? expressionNamesKo[activeSlot.targetEmotion] : "-"}
+            />
+            <MetricRow
+              label="마지막 예측"
+              value={prediction ? expressionNamesKo[prediction.label] : "-"}
+            />
+            <MetricRow
+              label="신뢰도"
+              value={prediction ? formatPercent(prediction.confidence) : "-"}
+            />
+          </div>
+
+          <Separator className="my-4" />
+
+          <a
+            href={compositeUrl}
+            download={downloadName}
+            className={cn(buttonVariants({ variant: "default", size: "lg" }), "w-full")}
+          >
+            <Download data-icon="inline-start" className="size-4" aria-hidden />
+            PNG 저장
+          </a>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!comicProject) {
+    return (
+      <main className="min-h-screen bg-background px-4 py-4 text-foreground sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-5xl flex-col justify-center gap-4">
+          <header className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge
+                icon={modelState === "ready" ? CheckCircle2 : LoaderCircle}
+                label={modelState === "ready" ? "모델 준비" : "모델 로딩"}
+                active={modelState === "ready"}
+              />
+              <StatusBadge icon={ShieldCheck} label="로컬 처리" active />
+              <StatusBadge
+                icon={uploadStatus === "analyzing" ? LoaderCircle : Upload}
+                label={uploadStatus === "analyzing" ? "웹툰 분석 중" : "업로드 대기"}
+                active={uploadStatus === "analyzing"}
+              />
+            </div>
+
+            {testMode && (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={loadSampleComic}
+                disabled={busy}
+              >
+                <ImagePlus data-icon="inline-start" className="size-4" />
+                샘플 웹툰
+              </Button>
+            )}
+          </header>
+
+          <input
+            id="comic-upload"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="sr-only"
+            onChange={handleComicUpload}
+            disabled={busy}
+          />
+
+          <label
+            htmlFor="comic-upload"
+            data-testid="comic-dropzone"
+            onDragOver={handleUploadDragOver}
+            onDragLeave={handleUploadDragLeave}
+            onDrop={handleUploadDrop}
+            className={cn(
+              "group grid min-h-[64vh] cursor-pointer place-items-center rounded-lg border border-dashed border-border bg-card p-6 text-center shadow-sm transition",
+              "hover:border-primary/60 hover:bg-accent/35 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/40",
+              isDraggingUpload && "border-primary bg-primary/5 ring-3 ring-primary/20",
+              busy && "pointer-events-none opacity-70",
+            )}
+          >
+            <div className="flex max-w-xl flex-col items-center gap-5">
+              <span className="grid size-16 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                {uploadStatus === "analyzing" ? (
+                  <LoaderCircle className="size-8 animate-spin" aria-hidden />
+                ) : (
+                  <Upload className="size-8" aria-hidden />
+                )}
+              </span>
+              <div className="grid gap-2">
+                <h1 className="text-3xl font-semibold tracking-normal sm:text-4xl">
+                  웹툰 이미지 업로드
+                </h1>
+                <p className="text-sm leading-6 text-muted-foreground sm:text-base">
+                  얼굴 마스크가 들어간 웹툰 이미지를 선택하거나 이 영역으로 드롭하세요.
+                </p>
+              </div>
+              <span className={buttonVariants({ variant: "default", size: "lg" })}>
+                <ImagePlus data-icon="inline-start" className="size-4" />
+                파일 선택
+              </span>
+              {uploadStatus === "analyzing" && (
+                <div className="w-full max-w-sm">
+                  <Progress value={65} aria-label="웹툰 분석 진행률" />
+                </div>
+              )}
+            </div>
+          </label>
+
+          {lastError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="size-4" aria-hidden />
+              <AlertTitle>처리 실패</AlertTitle>
+              <AlertDescription>{lastError}</AlertDescription>
+            </Alert>
+          )}
+        </div>
+        <canvas ref={canvasRef} className="hidden" aria-hidden />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-background px-4 py-4 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
@@ -622,42 +901,18 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
               active={Boolean(comicProject)}
             />
           </div>
-          <div className="flex flex-wrap gap-2">
-            {testMode && (
-              <Button
-                type="button"
-                variant="outline"
-                size="lg"
-                onClick={loadSampleComic}
-                disabled={busy}
-              >
-                <ImagePlus data-icon="inline-start" className="size-4" />
-                샘플 웹툰
-              </Button>
-            )}
-            <label
-              htmlFor="comic-upload"
-              className={cn(
-                buttonVariants({ variant: "default", size: "lg" }),
-                busy && "pointer-events-none opacity-50",
-              )}
+          {testMode && (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={loadSampleComic}
+              disabled={busy}
             >
-              {uploadStatus === "analyzing" ? (
-                <LoaderCircle data-icon="inline-start" className="size-4 animate-spin" />
-              ) : (
-                <Upload data-icon="inline-start" className="size-4" />
-              )}
-              이미지 업로드
-            </label>
-          </div>
-          <input
-            id="comic-upload"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="sr-only"
-            onChange={handleComicUpload}
-            disabled={busy}
-          />
+              <ImagePlus data-icon="inline-start" className="size-4" />
+              샘플 웹툰
+            </Button>
+          )}
         </header>
 
         <section className="grid gap-4 xl:grid-cols-[320px_minmax(460px,1fr)_380px]">
@@ -749,79 +1004,10 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
           </Card>
 
           <div className="grid gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <h2>현재 컷</h2>
-                </CardTitle>
-                <CardDescription>
-                  {activeSlot
-                    ? `${activeSlot.index + 1}/${totalSlots} · ${
-                        expressionNamesKo[activeSlot.targetEmotion]
-                      }`
-                    : "업로드 대기"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div
-                  className="relative grid min-h-64 place-items-center overflow-hidden rounded-lg border bg-muted"
-                  style={{
-                    aspectRatio: activeSlot
-                      ? `${activeSlot.panelRect.width} / ${activeSlot.panelRect.height}`
-                      : "16 / 9",
-                  }}
-                >
-                  {activeSlot ? (
-                    <img
-                      src={activeSlot.panelPreviewSrc}
-                      alt={`${activeSlot.index + 1}컷`}
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <ImagePlus className="size-10 text-muted-foreground" aria-hidden />
-                  )}
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <label className="grid gap-2 text-sm font-medium">
-                    목표 표정
-                    <select
-                      value={activeSlot?.targetEmotion ?? "Neutral"}
-                      disabled={!activeSlot || busy}
-                      onChange={(event) => {
-                        if (activeSlot) {
-                          updateSlotTarget(activeSlot.id, event.target.value as ExpressionLabel);
-                        }
-                      }}
-                      className="h-9 rounded-lg border border-border bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
-                    >
-                      {COMIC_TARGET_EXPRESSIONS.map((label) => (
-                        <option key={label} value={label}>
-                          {expressionNamesKo[label]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="lg"
-                    disabled={!nextSlot || !activeCapture || busy}
-                    onClick={() => {
-                      if (nextSlot) {
-                        selectSlot(nextSlot.id);
-                      }
-                    }}
-                  >
-                    <ArrowRight data-icon="inline-start" className="size-4" />
-                    다음 컷
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            {renderCurrentCutCard("order-2 xl:hidden")}
 
             {testMode && (
-              <Card>
+              <Card className="order-3">
                 <CardHeader>
                   <CardTitle>
                     <h2>테스트 얼굴</h2>
@@ -884,7 +1070,7 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
               </Card>
             )}
 
-            <Card>
+            <Card className="order-1">
               <CardHeader>
                 <CardTitle>
                   <h2 className="flex items-center gap-2">
@@ -973,96 +1159,10 @@ export function ExpressionStudio({ testAssets }: ExpressionStudioProps) {
             </Card>
           </div>
 
-          <Card className="self-start">
-            <CardHeader>
-              <CardTitle>
-                <h2>완성본</h2>
-              </CardTitle>
-              <CardAction>
-                <Badge variant={allComplete ? "default" : "outline"} className="font-mono">
-                  {Math.round(completionProgress)}%
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <CardContent>
-              <div
-                className="relative grid min-h-64 place-items-center overflow-hidden rounded-lg border bg-muted"
-                style={{
-                  aspectRatio: comicProject ? `${comicProject.width} / ${comicProject.height}` : "1 / 1",
-                }}
-              >
-                {comicProject ? (
-                  <img
-                    src={compositeUrl ?? comicProject.imageSrc}
-                    alt="웹툰 완성본 미리보기"
-                    className="h-full w-full object-contain"
-                  />
-                ) : (
-                  <ImagePlus className="size-10 text-muted-foreground" aria-hidden />
-                )}
-              </div>
-
-              <div className="mt-4 grid gap-3">
-                <MetricRow label="진행" value={`${completedCount}/${totalSlots}`} />
-                <MetricRow
-                  label="목표"
-                  value={activeSlot ? expressionNamesKo[activeSlot.targetEmotion] : "-"}
-                />
-                <MetricRow
-                  label="예측"
-                  value={prediction ? expressionNamesKo[prediction.label] : "-"}
-                />
-                <MetricRow
-                  label="신뢰도"
-                  value={prediction ? formatPercent(prediction.confidence) : "-"}
-                />
-              </div>
-
-              <div className="mt-4">
-                <Progress value={Math.round(completionProgress)} aria-label="웹툰 완성 진행률" />
-              </div>
-
-              {prediction && (
-                <Badge
-                  variant={prediction.matched ? "default" : "outline"}
-                  className={cn(
-                    "mt-4 h-7 rounded-lg px-3",
-                    prediction.matched
-                      ? "bg-[var(--status-good)] text-[var(--status-good-foreground)]"
-                      : "border-[var(--status-warn)] text-[var(--status-warn)]",
-                  )}
-                >
-                  {prediction.matched ? "적합" : "재촬영 권장"}
-                </Badge>
-              )}
-
-              <Separator className="my-4" />
-
-              <a
-                href={allComplete && compositeUrl ? compositeUrl : "#"}
-                download={downloadName}
-                aria-disabled={!allComplete || !compositeUrl}
-                tabIndex={allComplete && compositeUrl ? undefined : -1}
-                onClick={(event) => {
-                  if (!allComplete || !compositeUrl) {
-                    event.preventDefault();
-                  }
-                }}
-                className={cn(
-                  buttonVariants({
-                    variant: allComplete && compositeUrl ? "default" : "secondary",
-                    size: "lg",
-                  }),
-                  "w-full",
-                  (!allComplete || !compositeUrl) && "pointer-events-none opacity-50",
-                )}
-              >
-                <Download data-icon="inline-start" className="size-4" aria-hidden />
-                PNG 저장
-              </a>
-            </CardContent>
-          </Card>
+          {renderCurrentCutCard("hidden self-start xl:block")}
         </section>
+
+        {renderCompletionPreview()}
       </div>
       <canvas ref={canvasRef} className="hidden" aria-hidden />
     </main>
@@ -1215,6 +1315,8 @@ function captureVideoFrame(video: HTMLVideoElement): HTMLCanvasElement {
     throw new Error("Canvas 2D context is not available");
   }
 
+  context.translate(canvas.width, 0);
+  context.scale(-1, 1);
   context.drawImage(video, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
